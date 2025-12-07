@@ -1,0 +1,67 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "9000:9000"      
+      - "9002:9001"      
+    volumes:
+      - minio_data:/data 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9001:9000"
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    volumes:
+      - ./init/clickhouse:/docker-entrypoint-initdb.d
+      - clickhouse_data:/var/lib/clickhouse
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  prefect-server:
+    image: prefecthq/prefect:2-python3.11
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+
+  prefect-agent:
+    image: prefecthq/prefect:2-python3.11
+    command: >
+      sh -c "
+        pip install --no-cache-dir -r /opt/prefect/src/requirements.txt &&
+        prefect agent start --work-queue default
+      "
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+    volumes:
+      - ./src:/opt/prefect/src
+      - ./requirements.txt:/opt/prefect/src/requirements.txt
+    depends_on:
+      - prefect-server
+      - clickhouse
+      - minio
+
+volumes:
+  clickhouse_data:
+  minio_data:

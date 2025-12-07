@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.log
+*.sqlite3
+clickhouse_data/
+minio_data/
